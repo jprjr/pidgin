@@ -123,7 +123,7 @@ AC_CHECK_DECL([__SUNPRO_C], [SUNCC="yes"], [SUNCC="no"])
 dnl Checks for header files.
 AC_HEADER_STDC
 AC_HEADER_SYS_WAIT
-AC_CHECK_HEADERS(arpa/nameser_compat.h fcntl.h sys/time.h unistd.h locale.h signal.h stdint.h regex.h)
+AC_CHECK_HEADERS(arpa/nameser_compat.h fcntl.h sys/time.h unistd.h locale.h signal.h stdint.h)
 
 dnl Checks for typedefs, structures, and compiler characteristics.
 AC_C_CONST
@@ -372,6 +372,9 @@ AC_ARG_WITH(x, [],
 AC_ARG_ENABLE(gtkui, [AC_HELP_STRING([--disable-gtkui],
 		[compile without GTK+ user interface])],
 	enable_gtkui="$enableval", enable_gtkui="yes")
+AC_ARG_WITH(gtk, [AC_HELP_STRING([--with-gtk=<version>],
+		[compile with GTK+ 2 or 3 user interface (default: auto)])],
+	with_gtk="$withval", with_gtk="auto")
 AC_ARG_ENABLE(consoleui, [AC_HELP_STRING([--disable-consoleui],
 		[compile without console user interface])],
 	[enable_consoleui=$enableval force_finch=$enableval], [enable_consoleui=yes force_finch=no])
@@ -428,15 +431,35 @@ else
 fi
 
 if test "x$enable_gtkui" = "xyes" ; then
-	PKG_CHECK_MODULES(GTK, [gtk+-2.0 >= 2.10.0], , [
-		AC_MSG_RESULT(no)
-		AC_MSG_ERROR([
-
+	if test "x$with_gtk" = "x3"; then
+		PKG_CHECK_MODULES(GTK, [gtk+-3.0 >= 3.0.0], , [
+			AC_MSG_RESULT(no)
+			AC_MSG_ERROR([
+You must have GTK+ 3.0.0 or newer development headers installed to compile
+Pidgin.  If you want to build only Finch then specify --disable-gtkui when
+running configure.
+])])
+	elif test "x$with_gtk" = "x2"; then
+		PKG_CHECK_MODULES(GTK, [gtk+-2.0 >= 2.10.0], , [
+			AC_MSG_RESULT(no)
+			AC_MSG_ERROR([
 You must have GTK+ 2.10.0 or newer development headers installed to compile
 Pidgin.  If you want to build only Finch then specify --disable-gtkui when
 running configure.
 ])])
-
+	elif test "x$with_gtk" = "xauto"; then
+		PKG_CHECK_MODULES(GTK, [gtk+-3.0 >= 3.0.0], [with_gtk=3], [
+			AC_MSG_RESULT(no)
+			PKG_CHECK_MODULES(GTK, [gtk+-2.0 >= 2.10.0], [with_gtk=2], [
+				AC_MSG_RESULT(no)
+				AC_MSG_ERROR([
+You must have GTK+ 2.10.0 or newer development headers installed to compile
+Pidgin.  If you want to build only Finch then specify --disable-gtkui when
+running configure.
+])])])
+	else
+		AC_MSG_ERROR([--with-gtk must specify one of 2, 3 or auto.])
+	fi
 	AC_SUBST(GTK_CFLAGS)
 	AC_SUBST(GTK_LIBS)
 
@@ -444,13 +467,23 @@ running configure.
 	PKG_CHECK_MODULES(PANGO, [pango >= 1.4.0],
 			AC_DEFINE(HAVE_PANGO14, 1, [Define if we have Pango 1.4 or newer.]),:)
 
-	PKG_CHECK_MODULES(WEBKIT, [webkit-1.0 >= 1.1.1], , [
-		AC_MSG_RESULT(no)
-		AC_MSG_ERROR([
+	if test "x$with_gtk" = "x3"; then
+		PKG_CHECK_MODULES(WEBKIT, [webkitgtk-3.0 >= 1.1.1], , [
+			AC_MSG_RESULT(no)
+			AC_MSG_ERROR([
 You must have WebKit 1.1.1 or newer development headers installed to compile
 Pidgin.  If you want to build only Finch then specify --disable-gtkui when
 running configure.
 ])])
+	else
+		PKG_CHECK_MODULES(WEBKIT, [webkit-1.0 >= 1.1.1], , [
+			AC_MSG_RESULT(no)
+			AC_MSG_ERROR([
+You must have WebKit 1.1.1 or newer development headers installed to compile
+Pidgin.  If you want to build only Finch then specify --disable-gtkui when
+running configure.
+])])
+	fi
 	AC_SUBST(WEBKIT_CFLAGS)
 	AC_SUBST(WEBKIT_LIBS)
 
@@ -565,6 +598,10 @@ Use --disable-sm if you do not need session management support.
 	dnl #######################################################################
 	dnl # Check for GtkSpell
 	dnl #######################################################################
+	dnl GtkSpell is not GTK+3 compatible yet
+	if test "x$with_gtk" = "x3"; then
+		enable_gtkspell="no"
+	fi
 	if test "x$enable_gtkspell" = "xyes" ; then
 		PKG_CHECK_MODULES(GTKSPELL, gtkspell-2.0 >= 2.0.2, , [
 			AC_MSG_RESULT(no)
@@ -629,16 +666,29 @@ Use --disable-cap if you do not need the Contact Availability Prediction plugin.
 	dnl # Check for GCR for its certificate widgets
 	dnl #######################################################################
 	if test "x$enable_gcr" = "xyes"; then
-		PKG_CHECK_MODULES(GCR, gcr-0, [
-			AC_DEFINE(ENABLE_GCR, 1, [Define to 1 if GCR is found.])], [
-			AC_MSG_RESULT(no)
-			enable_gcr="no"
-			if test "x$force_deps" = "xyes" ; then
-				AC_MSG_ERROR([
+		if test "x$with_gtk" = "x3"; then
+			PKG_CHECK_MODULES(GCR, gcr-3, [
+				AC_DEFINE(ENABLE_GCR, 1, [Define to 1 if GCR is found.])], [
+				AC_MSG_RESULT(no)
+				enable_gcr="no"
+				if test "x$force_deps" = "xyes" ; then
+					AC_MSG_ERROR([
 GCR development headers not found.
 Use --disable-gcr if you do not need GCR certificate widgets.
 ])
-			fi])
+				fi])
+		else
+			PKG_CHECK_MODULES(GCR, gcr-0, [
+				AC_DEFINE(ENABLE_GCR, 1, [Define to 1 if GCR is found.])], [
+				AC_MSG_RESULT(no)
+				enable_gcr="no"
+				if test "x$force_deps" = "xyes" ; then
+					AC_MSG_ERROR([
+GCR development headers not found.
+Use --disable-gcr if you do not need GCR certificate widgets.
+])
+				fi])
+		fi
 	fi
 
 
@@ -821,20 +871,26 @@ else
 fi
 
 dnl #######################################################################
-dnl # Check for Farsight
+dnl # Check for Farstream
 dnl #######################################################################
-AC_ARG_ENABLE(farsight,
-	[AC_HELP_STRING([--disable-farsight], [compile without farsight support])],
-	enable_farsight="$enableval", enable_farsight="yes")
-if test "x$enable_farsight" != "xno"; then
-	PKG_CHECK_MODULES(FARSIGHT, [farsight2-0.10 >= 0.0.9], [
-		AC_DEFINE(USE_FARSIGHT, 1, [Use Farsight for voice and video])
-		AC_SUBST(FARSIGHT_CFLAGS)
-		AC_SUBST(FARSIGHT_LIBS)
-	], [
-		enable_farsight="no"
-	])
-fi
+AC_ARG_ENABLE(farstream,
+	[AC_HELP_STRING([--disable-farstream], [compile without farstream support])],
+	enable_farstream="$enableval", enable_farstream="yes")
+if test "x$enable_farstream" != "xno"; then
+	PKG_CHECK_MODULES(FARSTREAM, [farstream-0.1], [
+		AC_SUBST(FARSTREAM_CFLAGS)
+		AC_SUBST(FARSTREAM_LIBS)
+ 	], [
+		# Try farsight.
+		PKG_CHECK_MODULES(FARSTREAM, [farsight2-0.10 >= 0.0.9], [
+		        AC_DEFINE(HAVE_FARSIGHT, 1, [Use Farsight instead of Farstream])
+			AC_SUBST(FARSTREAM_CFLAGS)
+			AC_SUBST(FARSTREAM_LIBS)
+		], [
+		        enable_farstream="no"
+		])
+ 	])
+ fi
 
 dnl #######################################################################
 dnl # Check for Voice and Video support
@@ -843,20 +899,20 @@ AC_ARG_ENABLE(vv,
 	[AC_HELP_STRING([--disable-vv], [compile without voice and video support])],
 	enable_vv="$enableval", enable_vv="yes")
 if test "x$enable_vv" != "xno"; then
-	if test "x$enable_gstreamer" != "xno" -a "x$enable_gstinterfaces" != "xno" -a "x$enable_farsight" != "xno"; then
+	if test "x$enable_gstreamer" != "xno" -a "x$enable_gstinterfaces" != "xno" -a "x$enable_farstream" != "xno"; then
 		AC_DEFINE(USE_VV, 1, [Use voice and video])
 	else
 		enable_vv="no"
 		if test "x$force_deps" = "xyes"; then
 			AC_MSG_ERROR([
 Dependencies for voice/video were not met.
-Install the necessary gstreamer and farsight packages first.
+Install the necessary gstreamer and farstream packages first.
 Or use --disable-vv if you do not need voice/video support.
 			])
 		fi
 	fi
 fi
-AM_CONDITIONAL(USE_VV, test "x$enable_gstreamer" != "xno" -a "x$enable_gstinterfaces" != "xno" -a "x$enable_farsight" != "xno")
+AM_CONDITIONAL(USE_VV, test "x$enable_gstreamer" != "xno" -a "x$enable_gstinterfaces" != "xno" -a "x$enable_farstream" != "xno")
 
 dnl #######################################################################
 dnl # Check for Internationalized Domain Name support
@@ -2583,7 +2639,10 @@ echo
 echo $PACKAGE $VERSION
 
 echo
-echo Build GTK+ 2.x UI............. : $enable_gtkui
+echo Build GTK+ UI................. : $enable_gtkui
+if test "x$enable_gtkui" = "xyes"; then
+	echo Build for GTK+ version........ : $with_gtk
+fi
 echo Build console UI.............. : $enable_consoleui
 echo Build for X11................. : $with_x
 echo

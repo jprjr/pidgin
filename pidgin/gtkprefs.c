@@ -58,6 +58,8 @@
 #include "gtkwebviewtoolbar.h"
 #include "pidginstock.h"
 
+#include "gtk3compat.h"
+
 #define PROXYHOST 0
 #define PROXYPORT 1
 #define PROXYUSER 2
@@ -123,13 +125,13 @@ pidgin_prefs_labeled_spin_button(GtkWidget *box, const gchar *title,
 		const char *key, int min, int max, GtkSizeGroup *sg)
 {
 	GtkWidget *spin;
-	GtkObject *adjust;
+	GtkAdjustment *adjust;
 	int val;
 
 	val = purple_prefs_get_int(key);
 
-	adjust = gtk_adjustment_new(val, min, max, 1, 1, 0);
-	spin = gtk_spin_button_new(GTK_ADJUSTMENT(adjust), 1, 0);
+	adjust = GTK_ADJUSTMENT(gtk_adjustment_new(val, min, max, 1, 1, 0));
+	spin = gtk_spin_button_new(adjust, 1, 0);
 	g_object_set_data(G_OBJECT(spin), "val", (char *)key);
 	if (max < 10000)
 		gtk_widget_set_size_request(spin, 50, -1);
@@ -187,29 +189,49 @@ pidgin_prefs_labeled_password(GtkWidget *page, const gchar *title,
 	return pidgin_add_widget_to_vbox(GTK_BOX(page), title, sg, entry, TRUE, NULL);
 }
 
+/* TODO: Maybe move this up somewheres... */
+enum {
+	PREF_DROPDOWN_TEXT,
+	PREF_DROPDOWN_VALUE,
+	PREF_DROPDOWN_COUNT
+};
 
 static void
 dropdown_set(GObject *w, const char *key)
 {
 	const char *str_value;
 	int int_value;
+	gboolean bool_value;
 	PurplePrefType type;
+	GtkTreeIter iter;
+	GtkTreeModel *tree_model;
+
+	tree_model = gtk_combo_box_get_model(GTK_COMBO_BOX(w));
+	if (!gtk_combo_box_get_active_iter(GTK_COMBO_BOX(w), &iter))
+		return;
 
 	type = GPOINTER_TO_INT(g_object_get_data(w, "type"));
 
 	if (type == PURPLE_PREF_INT) {
-		int_value = GPOINTER_TO_INT(g_object_get_data(w, "value"));
+		gtk_tree_model_get(tree_model, &iter,
+		                   PREF_DROPDOWN_VALUE, &int_value,
+		                   -1);
 
 		purple_prefs_set_int(key, int_value);
 	}
 	else if (type == PURPLE_PREF_STRING) {
-		str_value = (const char *)g_object_get_data(w, "value");
+		gtk_tree_model_get(tree_model, &iter,
+		                   PREF_DROPDOWN_VALUE, &str_value,
+		                   -1);
 
 		purple_prefs_set_string(key, str_value);
 	}
 	else if (type == PURPLE_PREF_BOOLEAN) {
-		purple_prefs_set_bool(key,
-				GPOINTER_TO_INT(g_object_get_data(w, "value")));
+		gtk_tree_model_get(tree_model, &iter,
+		                   PREF_DROPDOWN_VALUE, &bool_value,
+		                   -1);
+
+		purple_prefs_set_bool(key, bool_value);
 	}
 }
 
@@ -217,69 +239,89 @@ GtkWidget *
 pidgin_prefs_dropdown_from_list(GtkWidget *box, const gchar *title,
 		PurplePrefType type, const char *key, GList *menuitems)
 {
-	GtkWidget  *dropdown, *opt, *menu;
+	GtkWidget  *dropdown;
 	GtkWidget  *label = NULL;
 	gchar      *text;
 	const char *stored_str = NULL;
 	int         stored_int = 0;
+	gboolean    stored_bool = FALSE;
 	int         int_value  = 0;
 	const char *str_value  = NULL;
-	int         o = 0;
+	gboolean    bool_value = FALSE;
+	GtkListStore *store = NULL;
+	GtkTreeIter iter;
+	GtkTreeIter active;
+	GtkCellRenderer *renderer;
 
 	g_return_val_if_fail(menuitems != NULL, NULL);
 
-	dropdown = gtk_option_menu_new();
-	menu = gtk_menu_new();
-
-	if (type == PURPLE_PREF_INT)
+	if (type == PURPLE_PREF_INT) {
+		store = gtk_list_store_new(PREF_DROPDOWN_COUNT, G_TYPE_STRING, G_TYPE_INT);
 		stored_int = purple_prefs_get_int(key);
-	else if (type == PURPLE_PREF_STRING)
+	} else if (type == PURPLE_PREF_STRING) {
+		store = gtk_list_store_new(PREF_DROPDOWN_COUNT, G_TYPE_STRING, G_TYPE_STRING);
 		stored_str = purple_prefs_get_string(key);
+	} else if (type == PURPLE_PREF_BOOLEAN) {
+		store = gtk_list_store_new(PREF_DROPDOWN_COUNT, G_TYPE_STRING, G_TYPE_BOOLEAN);
+		stored_bool = purple_prefs_get_bool(key);
+	} else {
+		g_warn_if_reached();
+		return NULL;
+	}
 
-	while (menuitems != NULL && (text = (char *) menuitems->data) != NULL) {
+	dropdown = gtk_combo_box_new_with_model(GTK_TREE_MODEL(store));
+	g_object_set_data(G_OBJECT(dropdown), "type", GINT_TO_POINTER(type));
+
+	while (menuitems != NULL && (text = (char *)menuitems->data) != NULL) {
 		menuitems = g_list_next(menuitems);
 		g_return_val_if_fail(menuitems != NULL, NULL);
 
-		opt = gtk_menu_item_new_with_label(text);
-
-		g_object_set_data(G_OBJECT(opt), "type", GINT_TO_POINTER(type));
+		gtk_list_store_append(store, &iter);
+		gtk_list_store_set(store, &iter,
+		                   PREF_DROPDOWN_TEXT, text,
+		                   -1);
 
 		if (type == PURPLE_PREF_INT) {
 			int_value = GPOINTER_TO_INT(menuitems->data);
-			g_object_set_data(G_OBJECT(opt), "value",
-							  GINT_TO_POINTER(int_value));
+			gtk_list_store_set(store, &iter,
+			                   PREF_DROPDOWN_VALUE, int_value,
+			                   -1);
 		}
 		else if (type == PURPLE_PREF_STRING) {
 			str_value = (const char *)menuitems->data;
-
-			g_object_set_data(G_OBJECT(opt), "value", (char *)str_value);
+			gtk_list_store_set(store, &iter,
+			                   PREF_DROPDOWN_VALUE, str_value,
+			                   -1);
 		}
 		else if (type == PURPLE_PREF_BOOLEAN) {
-			g_object_set_data(G_OBJECT(opt), "value",
-					menuitems->data);
+			bool_value = (gboolean)GPOINTER_TO_INT(menuitems->data);
+			gtk_list_store_set(store, &iter,
+			                   PREF_DROPDOWN_VALUE, bool_value,
+			                   -1);
 		}
-
-		g_signal_connect(G_OBJECT(opt), "activate",
-						 G_CALLBACK(dropdown_set), (char *)key);
-
-		gtk_widget_show(opt);
-		gtk_menu_shell_append(GTK_MENU_SHELL(menu), opt);
 
 		if ((type == PURPLE_PREF_INT && stored_int == int_value) ||
 			(type == PURPLE_PREF_STRING && stored_str != NULL &&
 			 !strcmp(stored_str, str_value)) ||
 			(type == PURPLE_PREF_BOOLEAN &&
-			 (purple_prefs_get_bool(key) == GPOINTER_TO_INT(menuitems->data)))) {
+			 (stored_bool == bool_value))) {
 
-			gtk_menu_set_active(GTK_MENU(menu), o);
+			active = iter;
 		}
 
 		menuitems = g_list_next(menuitems);
-
-		o++;
 	}
 
-	gtk_option_menu_set_menu(GTK_OPTION_MENU(dropdown), menu);
+	renderer = gtk_cell_renderer_text_new();
+	gtk_cell_layout_pack_start(GTK_CELL_LAYOUT(dropdown), renderer, TRUE);
+	gtk_cell_layout_set_attributes(GTK_CELL_LAYOUT(dropdown), renderer,
+	                               "text", 0,
+	                               NULL);
+
+	gtk_combo_box_set_active_iter(GTK_COMBO_BOX(dropdown), &active);
+
+	g_signal_connect(G_OBJECT(dropdown), "changed",
+	                 G_CALLBACK(dropdown_set), (char *)key);
 
 	pidgin_add_widget_to_vbox(GTK_BOX(box), title, NULL, dropdown, FALSE, &label);
 
@@ -862,9 +904,10 @@ static void
 theme_dnd_recv(GtkWidget *widget, GdkDragContext *dc, guint x, guint y,
 		GtkSelectionData *sd, guint info, guint t, gpointer user_data)
 {
-	gchar *name = g_strchomp((gchar *)sd->data);
+	gchar *name = g_strchomp((gchar *)gtk_selection_data_get_data(sd));
 
-	if ((sd->length >= 0) && (sd->format == 8)) {
+	if ((gtk_selection_data_get_length(sd) >= 0)
+	 && (gtk_selection_data_get_format(sd) == 8)) {
 		/* Well, it looks like the drag event was cool.
 		 * Let's do something with it */
 		gchar *temp;
@@ -1057,51 +1100,6 @@ prefs_set_blist_theme_cb(GtkComboBox *combo_box, gpointer user_data)
 	}
 }
 
-/* sets the current conversation theme */
-static void
-prefs_set_conv_theme_cb(GtkComboBox *combo_box, gpointer user_data)
-{
-	PidginConvTheme *theme =  NULL;
-	GtkTreeIter iter;
-	gchar *name = NULL;
-
-	if (gtk_combo_box_get_active_iter(combo_box, &iter)) {
-		const GList *variants;
-		const char *current_variant;
-		gboolean unset = TRUE;
-
-		gtk_tree_model_get(GTK_TREE_MODEL(prefs_conv_themes), &iter, 2, &name, -1);
-		if (!name || !*name) {
-			g_free(name);
-			return;
-		}
-
-		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/theme", name);
-
-		/* Update list of variants */
-		gtk_list_store_clear(prefs_conv_variants);
-
-		theme = PIDGIN_CONV_THEME(purple_theme_manager_find_theme(name, "conversation"));
-		current_variant = pidgin_conversation_theme_get_variant(theme);
-
-		variants = pidgin_conversation_theme_get_variants(theme);
-		for (; variants && current_variant; variants = g_list_next(variants)) {
-			gtk_list_store_append(prefs_conv_variants, &iter);
-			gtk_list_store_set(prefs_conv_variants, &iter, 0, variants->data, -1);
-
-			if (g_str_equal(variants->data, current_variant)) {
-				gtk_combo_box_set_active_iter(GTK_COMBO_BOX(prefs_conv_variants_combo_box), &iter);
-				unset = FALSE;
-			}
-		}
-
-		if (unset)
-			gtk_combo_box_set_active(GTK_COMBO_BOX(prefs_conv_variants_combo_box), 0);
-
-		g_free(name);
-	}
-}
-
 /* sets the current conversation theme variant */
 static void
 prefs_set_conv_variant_cb(GtkComboBox *combo_box, gpointer user_data)
@@ -1112,7 +1110,10 @@ prefs_set_conv_variant_cb(GtkComboBox *combo_box, gpointer user_data)
 
 	if (gtk_combo_box_get_active_iter(GTK_COMBO_BOX(prefs_conv_themes_combo_box), &iter)) {
 		gtk_tree_model_get(GTK_TREE_MODEL(prefs_conv_themes), &iter, 2, &name, -1);
-		theme = PIDGIN_CONV_THEME(purple_theme_manager_find_theme(name, "conversation"));
+		if (name && *name)
+			theme = PIDGIN_CONV_THEME(purple_theme_manager_find_theme(name, "conversation"));
+		else
+			theme = PIDGIN_CONV_THEME(pidgin_conversations_get_default_theme());
 		g_free(name);
 
 		if (gtk_combo_box_get_active_iter(combo_box, &iter)) {
@@ -1120,6 +1121,56 @@ prefs_set_conv_variant_cb(GtkComboBox *combo_box, gpointer user_data)
 			pidgin_conversation_theme_set_variant(theme, name);
 			g_free(name);
 		}
+	}
+}
+
+/* sets the current conversation theme */
+static void
+prefs_set_conv_theme_cb(GtkComboBox *combo_box, gpointer user_data)
+{
+	GtkTreeIter iter;
+
+	if (gtk_combo_box_get_active_iter(combo_box, &iter)) {
+		gchar *name = NULL;
+		PidginConvTheme *theme;
+		const char *current_variant;
+		const GList *variants;
+		gboolean unset = TRUE;
+
+		gtk_tree_model_get(GTK_TREE_MODEL(prefs_conv_themes), &iter, 2, &name, -1);
+
+		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/theme", name);
+
+		g_signal_handlers_block_by_func(prefs_conv_variants_combo_box,
+		                                prefs_set_conv_variant_cb, NULL);
+
+		/* Update list of variants */
+		gtk_list_store_clear(prefs_conv_variants);
+
+		if (name && *name)
+			theme = PIDGIN_CONV_THEME(purple_theme_manager_find_theme(name, "conversation"));
+		else
+			theme = PIDGIN_CONV_THEME(pidgin_conversations_get_default_theme());
+
+		current_variant = pidgin_conversation_theme_get_variant(theme);
+
+		variants = pidgin_conversation_theme_get_variants(theme);
+		for (; variants && current_variant; variants = g_list_next(variants)) {
+			gtk_list_store_append(prefs_conv_variants, &iter);
+			gtk_list_store_set(prefs_conv_variants, &iter, 0, variants->data, -1);
+	
+			if (g_str_equal(variants->data, current_variant)) {
+				gtk_combo_box_set_active_iter(GTK_COMBO_BOX(prefs_conv_variants_combo_box), &iter);
+				unset = FALSE;
+			}
+		}
+
+		if (unset)
+			gtk_combo_box_set_active(GTK_COMBO_BOX(prefs_conv_variants_combo_box), 0);
+
+		g_signal_handlers_unblock_by_func(prefs_conv_variants_combo_box,
+		                                  prefs_set_conv_variant_cb, NULL);
+		g_free(name);
 	}
 }
 
@@ -1306,50 +1357,36 @@ formatting_toggle_cb(GtkWebView *webview, GtkWebViewButtons buttons, void *toolb
 		purple_prefs_set_int(PIDGIN_PREFS_ROOT "/conversations/font_size",
 		                     gtk_webview_get_current_fontsize(webview));
 	if (buttons & GTK_WEBVIEW_FACE) {
-		const char *face = gtk_webview_get_current_fontface(webview);
-		if (!face)
-			face = "";
+		char *face = gtk_webview_get_current_fontface(webview);
 
-		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/font_face", face);
+		if (face)
+			purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/font_face", face);
+		else
+			purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/font_face", "");
+
+		g_free(face);
 	}
 
 	if (buttons & GTK_WEBVIEW_FORECOLOR) {
-		const char *color = gtk_webview_get_current_forecolor(webview);
-		if (!color)
-			color = "";
+		char *color = gtk_webview_get_current_forecolor(webview);
 
-		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/fgcolor", color);
+		if (color)
+			purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/fgcolor", color);
+		else
+			purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/fgcolor", "");
+
+		g_free(color);
 	}
 
 	if (buttons & GTK_WEBVIEW_BACKCOLOR) {
-		const char *color;
-		GObject *object;
+		char *color = gtk_webview_get_current_backcolor(webview);
 
-		color = gtk_webview_get_current_backcolor(webview);
-		if (!color)
-			color = "";
+		if (color)
+			purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/bgcolor", color);
+		else
+			purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/bgcolor", "");
 
-		/* Block the signal to prevent a loop. */
-		object = g_object_ref(G_OBJECT(webview));
-		g_signal_handlers_block_matched(object, G_SIGNAL_MATCH_DATA, 0, 0, NULL,
-		                                NULL, toolbar);
-		/* Clear the backcolor. */
-		gtk_webview_toggle_backcolor(webview, "");
-		/* Unblock the signal. */
-		g_signal_handlers_unblock_matched(object, G_SIGNAL_MATCH_DATA, 0, 0,
-		                                  NULL, NULL, toolbar);
-		g_object_unref(object);
-
-		/* This will fire a toggle signal and get saved below. */
-		gtk_webview_toggle_background(webview, color);
-	}
-
-	if (buttons & GTK_WEBVIEW_BACKGROUND) {
-		const char *color = gtk_webview_get_current_background(webview);
-		if (!color)
-			color = "";
-
-		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/bgcolor", color);
+		g_free(color);
 	}
 }
 
@@ -1703,8 +1740,7 @@ conv_page(void)
 	                                 GTK_WEBVIEW_SHRINK |
 	                                 GTK_WEBVIEW_FACE |
 	                                 GTK_WEBVIEW_FORECOLOR |
-	                                 GTK_WEBVIEW_BACKCOLOR |
-	                                 GTK_WEBVIEW_BACKGROUND);
+	                                 GTK_WEBVIEW_BACKCOLOR);
 
 	gtk_webview_append_html(GTK_WEBVIEW(webview),
 	                        _("This is how your outgoing message text will "
@@ -1819,11 +1855,11 @@ proxy_button_clicked_cb(GtkWidget *button, gchar *program)
 
 #ifndef _WIN32
 static void
-browser_button_clicked_cb(GtkWidget *button, gpointer null)
+browser_button_clicked_cb(GtkWidget *button, gchar *path)
 {
 	GError *err = NULL;
 
-	if (g_spawn_command_line_async ("gnome-default-applications-properties", &err))
+	if (g_spawn_command_line_async(path, &err))
 		return;
 
 	purple_notify_error(NULL, NULL, _("Cannot start browser configuration program."), err->message);
@@ -2094,8 +2130,8 @@ browser_page(void)
 
 	vbox = pidgin_make_frame (ret, _("Browser Selection"));
 
-	if(purple_running_gnome()) {
-		gchar *path = g_find_program_in_path("gnome-default-applications-properties");
+	if (purple_running_gnome()) {
+		gchar *path;
 
 		hbox = gtk_hbox_new(FALSE, PIDGIN_HIG_BOX_SPACE);
 		label = gtk_label_new(_("Browser preferences are configured in GNOME preferences"));
@@ -2105,19 +2141,28 @@ browser_page(void)
 		hbox = gtk_hbox_new(FALSE, PIDGIN_HIG_BOX_SPACE);
 		gtk_container_add(GTK_CONTAINER(vbox), hbox);
 
-		if(path == NULL) {
+		path = g_find_program_in_path("gnome-control-center");
+		if (path != NULL) {
+			gchar *tmp = g_strdup_printf("%s info", path);
+			g_free(path);
+			path = tmp;
+		} else {
+			path = g_find_program_in_path("gnome-default-applications-properties");
+		}
+
+		if (path == NULL) {
 			label = gtk_label_new(NULL);
 			gtk_label_set_markup(GTK_LABEL(label),
 								 _("<b>Browser configuration program was not found.</b>"));
 			gtk_box_pack_start(GTK_BOX(hbox), label, FALSE, FALSE, 0);
 		} else {
 			browser_button = gtk_button_new_with_mnemonic(_("Configure _Browser"));
-			g_signal_connect(G_OBJECT(browser_button), "clicked",
-							 G_CALLBACK(browser_button_clicked_cb), NULL);
+			g_signal_connect_data(G_OBJECT(browser_button), "clicked",
+			                      G_CALLBACK(browser_button_clicked_cb), path,
+			                      (GClosureNotify)g_free, 0);
 			gtk_box_pack_start(GTK_BOX(hbox), browser_button, FALSE, FALSE, 0);
 		}
 
-		g_free(path);
 		gtk_widget_show_all(ret);
 	} else {
 		sg = gtk_size_group_new(GTK_SIZE_GROUP_HORIZONTAL);
@@ -2597,7 +2642,7 @@ static GtkWidget *
 sound_page(void)
 {
 	GtkWidget *ret;
-	GtkWidget *vbox, *vbox2, *sw, *button;
+	GtkWidget *vbox, *vbox2, *sw, *button, *parent, *parent_parent, *parent_parent_parent;
 	GtkSizeGroup *sg;
 	GtkTreeIter iter;
 	GtkWidget *event_view;
@@ -2697,12 +2742,15 @@ sound_page(void)
 
 	/* The following is an ugly hack to make the frame expand so the
 	 * sound events list is big enough to be usable */
-	gtk_box_set_child_packing(GTK_BOX(vbox->parent), vbox, TRUE, TRUE, 0,
+	parent = gtk_widget_get_parent(vbox);
+	parent_parent = gtk_widget_get_parent(parent);
+	parent_parent_parent = gtk_widget_get_parent(parent_parent);
+	gtk_box_set_child_packing(GTK_BOX(parent), vbox, TRUE, TRUE, 0,
 			GTK_PACK_START);
-	gtk_box_set_child_packing(GTK_BOX(vbox->parent->parent), vbox->parent, TRUE,
-			TRUE, 0, GTK_PACK_START);
-	gtk_box_set_child_packing(GTK_BOX(vbox->parent->parent->parent),
-			vbox->parent->parent, TRUE, TRUE, 0, GTK_PACK_START);
+	gtk_box_set_child_packing(GTK_BOX(parent_parent),
+			parent, TRUE, TRUE, 0, GTK_PACK_START);
+	gtk_box_set_child_packing(GTK_BOX(parent_parent_parent),
+			parent_parent, TRUE, TRUE, 0, GTK_PACK_START);
 
 	/* SOUND SELECTION */
 	event_store = gtk_list_store_new (4, G_TYPE_BOOLEAN, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_UINT);
@@ -2939,7 +2987,11 @@ pidgin_prefs_show(void)
 	/* Back to instant-apply! I win!  BU-HAHAHA! */
 
 	/* Create the window */
+#if GTK_CHECK_VERSION(3,0,0)
+	prefs = pidgin_create_dialog(_("Preferences"), 0, "preferences", FALSE);
+#else
 	prefs = pidgin_create_dialog(_("Preferences"), PIDGIN_HIG_BORDER, "preferences", FALSE);
+#endif
 	g_signal_connect(G_OBJECT(prefs), "destroy",
 					 G_CALLBACK(delete_prefs), NULL);
 

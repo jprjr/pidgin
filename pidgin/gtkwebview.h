@@ -48,14 +48,13 @@ typedef enum {
 	GTK_WEBVIEW_FACE          = 1 << 5,
 	GTK_WEBVIEW_FORECOLOR     = 1 << 6,
 	GTK_WEBVIEW_BACKCOLOR     = 1 << 7,
-	GTK_WEBVIEW_BACKGROUND    = 1 << 8,
-	GTK_WEBVIEW_LINK          = 1 << 9,
-	GTK_WEBVIEW_IMAGE         = 1 << 10,
-	GTK_WEBVIEW_SMILEY        = 1 << 11,
-	GTK_WEBVIEW_LINKDESC      = 1 << 12,
-	GTK_WEBVIEW_STRIKE        = 1 << 13,
+	GTK_WEBVIEW_LINK          = 1 << 8,
+	GTK_WEBVIEW_IMAGE         = 1 << 9,
+	GTK_WEBVIEW_SMILEY        = 1 << 10,
+	GTK_WEBVIEW_LINKDESC      = 1 << 11,
+	GTK_WEBVIEW_STRIKE        = 1 << 12,
 	/** Show custom smileys when appropriate. */
-	GTK_WEBVIEW_CUSTOM_SMILEY = 1 << 14,
+	GTK_WEBVIEW_CUSTOM_SMILEY = 1 << 13,
 	GTK_WEBVIEW_ALL           = -1
 } GtkWebViewButtons;
 
@@ -75,6 +74,7 @@ struct _GtkWebViewClass
 	void (*toggle_format)(GtkWebView *, GtkWebViewButtons);
 	void (*clear_format)(GtkWebView *);
 	void (*update_format)(GtkWebView *);
+	void (*changed)(GtkWebView *);
 };
 
 G_BEGIN_DECLS
@@ -114,14 +114,23 @@ gboolean gtk_webview_is_empty(GtkWebView *webview);
 void gtk_webview_append_html(GtkWebView *webview, const char *markup);
 
 /**
- * Rather than use webkit_webview_load_string, this routine
- * parses and displays the \<img id=?\> tags that make use of the
- * Pidgin imgstore.
+ * Requests loading of the given content.
  *
  * @param webview The GtkWebView object
  * @param html    The HTML content to load
  */
-void gtk_webview_load_html_string_with_imgstore(GtkWebView *webview, const char *html);
+void gtk_webview_load_html_string(GtkWebView *webview, const char *html);
+
+/**
+ * Requests loading of the given content and sets the selection. You must
+ * include an anchor tag with id='caret' in the HTML string, which will be
+ * used to set the selection. This tag is then removed so that querying the
+ * WebView's HTML contents will no longer return it.
+ *
+ * @param webview The GtkWebView object
+ * @param html    The HTML content to load
+ */
+void gtk_webview_load_html_string_with_selection(GtkWebView *webview, const char *html);
 
 /**
  * Execute the JavaScript only after the webkit_webview_load_string
@@ -192,6 +201,14 @@ void gtk_webview_set_editable(GtkWebView *webview, gboolean editable);
 void gtk_webview_setup_entry(GtkWebView *webview, PurpleConnectionFlags flags);
 
 /**
+ * Setup spell-checking on a GtkWebView.
+ *
+ * @param webview The GtkWebView.
+ * @param enable  Whether to enable or disable spell-checking.
+ */
+void pidgin_webview_set_spellcheck(GtkWebView *webview, gboolean enable);
+
+/**
  * Enables or disables whole buffer formatting only (wbfo) in a GtkWebView.
  * In this mode formatting options to the buffer take effect for the entire
  * buffer instead of specific text.
@@ -242,7 +259,7 @@ void gtk_webview_get_current_format(GtkWebView *webview, gboolean *bold,
  *
  * @return A string containing the font face or @c NULL if none is set.
  */
-const char *gtk_webview_get_current_fontface(GtkWebView *webview);
+char *gtk_webview_get_current_fontface(GtkWebView *webview);
 
 /**
  * Returns a string containing the selected foreground color at the current
@@ -252,7 +269,7 @@ const char *gtk_webview_get_current_fontface(GtkWebView *webview);
  *
  * @return A string containing the foreground color or @c NULL if none is set.
  */
-const char *gtk_webview_get_current_forecolor(GtkWebView *webview);
+char *gtk_webview_get_current_forecolor(GtkWebView *webview);
 
 /**
  * Returns a string containing the selected font background color at the current
@@ -262,17 +279,7 @@ const char *gtk_webview_get_current_forecolor(GtkWebView *webview);
  *
  * @return A string containing the background color or @c NULL if none is set.
  */
-const char *gtk_webview_get_current_backcolor(GtkWebView *webview);
-
-/**
- * Returns a string containing the selected background color at the current
- * position in a GtkWebView.
- *
- * @param webview The GtkWebView
- *
- * @return A string containg the background color or @c NULL if none is set.
- */
-const char *gtk_webview_get_current_background(GtkWebView *webview);
+char *gtk_webview_get_current_backcolor(GtkWebView *webview);
 
 /**
  * Returns a integer containing the selected HTML font size at the current
@@ -292,6 +299,43 @@ gint gtk_webview_get_current_fontsize(GtkWebView *webview);
  * @return @c TRUE if the IM/HTML is editable, or @c FALSE otherwise.
  */
 gboolean gtk_webview_get_editable(GtkWebView *webview);
+
+/**
+ * Gets the content of the head element of a GtkWebView as HTML.
+ *
+ * @param webview The GtkWebView
+ *
+ * @return The HTML from the head element.
+ */
+gchar *gtk_webview_get_head_html(GtkWebView *webview);
+
+/**
+ * Gets the HTML content of a GtkWebView.
+ *
+ * @param webview The GtkWebView
+ *
+ * @return The HTML that is currently displayed.
+ */
+gchar *gtk_webview_get_body_html(GtkWebView *webview);
+
+/**
+ * Gets the text content of a GtkWebView.
+ *
+ * @param webview The GtkWebView
+ *
+ * @return The HTML-free text that is currently displayed.
+ */
+gchar *gtk_webview_get_body_text(GtkWebView *webview);
+
+/**
+ * Gets the selected text of a GtkWebView.
+ *
+ * @param webview The GtkWebView
+ *
+ * @return The HTML-free text that is currently selected, or NULL if nothing is
+ *         currently selected.
+ */
+gchar *gtk_webview_get_selected_text(GtkWebView *webview);
 
 /**
  * Clear all the formatting on a GtkWebView.
@@ -351,17 +395,6 @@ gboolean gtk_webview_toggle_forecolor(GtkWebView *webview, const char *color);
 gboolean gtk_webview_toggle_backcolor(GtkWebView *webview, const char *color);
 
 /**
- * Toggles a background color at the current location or selection in a 
- * GtkWebView.
- *
- * @param webview The GtkWebView
- * @param color  The HTML-style color, or @c NULL or "" to clear the color.
- *
- * @return @c TRUE if a color was set, or @c FALSE if it was cleared.
- */
-gboolean gtk_webview_toggle_background(GtkWebView *webview, const char *color);
-
-/**
  * Toggles a font face at the current location or selection in a GtkWebView.
  *
  * @param webview The GtkWebView
@@ -394,6 +427,32 @@ void gtk_webview_font_shrink(GtkWebView *webview);
  * @param webview The GtkWebView
  */
 void gtk_webview_font_grow(GtkWebView *webview);
+
+/**
+ * Inserts a horizontal rule at the current location or selection in a
+ * GtkWebView.
+ *
+ * @param webview The GtkWebView
+ */
+void gtk_webview_insert_hr(GtkWebView *webview);
+
+/**
+ * Inserts a link at the current location or selection in a GtkWebView.
+ *
+ * @param webview The GtkWebView
+ * @param url     The URL of the link
+ * @param desc    The text description of the link. If not supplied, the URL is
+ *                used instead.
+ */
+void gtk_webview_insert_link(GtkWebView *webview, const char *url, const char *desc);
+
+/**
+ * Inserts an image at the current location or selection in a GtkWebView.
+ *
+ * @param webview The GtkWebView
+ * @param id      The PurpleStoredImage id
+ */
+void gtk_webview_insert_image(GtkWebView *webview, int id);
 
 G_END_DECLS
 

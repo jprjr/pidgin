@@ -90,7 +90,11 @@ struct _PidginConversation
 
 	gboolean make_sound;
 
+#if GTK_CHECK_VERSION(2,12,0)
+	gpointer depr2;
+#else
 	GtkTooltips *tooltips;
+#endif
 
 	GtkWidget *tab_cont;
 	GtkWidget *tabby;
@@ -166,6 +170,13 @@ G_BEGIN_DECLS
  * @return The GTK+ conversation operations structure.
  */
 PurpleConversationUiOps *pidgin_conversations_get_conv_ui_ops(void);
+
+/**
+ * Returns the default theme for GTK+ conversations.
+ *
+ * @return The default GTK+ conversation theme.
+ */
+PurpleTheme *pidgin_conversations_get_default_theme(void);
 
 /**
  * Updates the buddy icon on a conversation.

@@ -24,8 +24,7 @@ version 3.0.0 (??/??/????):
 	MSN:
 	* Fix file transfer with older Mac MSN clients.
 	* Support file transfers up to ~9 EiB.
-	* Support new protocol version MSNP18. (#14753)
-	* Fix messages to offline contacts. (#14302)
+	* Fix buddies not going offline.
 
 	MXit:
 	* Remove all reference to Hidden Number.
@@ -40,12 +39,75 @@ version 3.0.0 (??/??/????):
 	  to the core (and UIs) as incoming messages (Thijs Alkemade).
 	  (#14529)
 	* Support file transfers up to ~9 EiB.
+	* Invalid user moods can no longer be sent to the server.
 
 	Plugins:
 	* The Voice/Video Settings plugin supports using the sndio GStreamer
-	 backends. (Brad Smith) (#14414)
+	  backends. (Brad Smith) (#14414)
+	* The Offline Message Emulation plugin now adds a note that the message
+	  was an offline message. (Flavius Anton) (#2497)
 
-version 2.10.2 (02/22/2012):
+	MSN:
+	* Fix a crash when removing a user before its icon is loaded. (Mark
+	  Barfield) (#15217)
+
+	Yahoo!:
+	* Fix a double-free in profile/picture loading code. (Mihai Serban)
+	  (#15053)
+
+version 2.10.6 (07/06/2012):
+	Pidgin:
+	* Fix a bug that requires a triple-click to open a conversation
+	  window from the buddy list. (#15199)
+
+version 2.10.5 (07/05/2012):
+	libpurple:
+	* Add support for GNOME3 proxy settings. (Mihai Serban) (#15054)
+
+	Pidgin:
+	* Fix a crash that may occur when trying to ignore a user who is
+	  not in the current chat room. (#15139)
+
+	MSN:
+	* Fix building with MSVC on Windows (broken in 2.10.4). (Florian
+	  Quèze)
+
+	MXit:
+	* Fix a buffer overflow vulnerability when parsing incoming messages
+	  containing inline images.  Thanks to Ulf Härnhammar for reporting
+	  this! (CVE-2012-3374)
+
+version 2.10.4 (05/06/2012):
+	General:
+	* Support building against Farstream in addition to Farsight.
+	  (Olivier Crete) (#14936)
+
+	IRC:
+	* Disable periodic WHO timer.  IRC channel user lists will no
+	  longer automatically display away status, but libpurple will be
+	  much kinder to the network.
+	* Print unknown numerics to channel windows if we can associate
+	  them.  Thanks to Marien Zwart. (#15090)
+
+	MSN:
+	* Fix a possible crash when receiving messages with certain characters
+	  or character encodings.  Thanks to Fabian Yamaguchi for reporting
+	  this! (CVE-2012-2318)
+
+	XMPP:
+	* Fix a possible crash when receiving a series of specially crafted
+	  file transfer requests.  Thanks to José Valentín Gutiérrez for
+	  reporting this!  (CVE-2012-2214)
+
+	Windows-Specific Changes:
+	* Words added to spell check dictionaries are saved across restarts of
+	  Pidgin (#11886)
+
+version 2.10.3 (03/26/2012):
+	MSN:
+	* Fix buddies not going offline. (#14997)
+
+version 2.10.2 (03/14/2012):
 	General:
 	* Fix compilation when using binutils 2.22 and new GDK pixbuf. (#14799)
 	* Fix compilation of the MXit protocol plugin with GLib 2.31. (#14773)
@@ -53,12 +115,16 @@ version 2.10.2 (02/22/2012):
 	Pidgin:
 	* Add support for the GNOME3 Network dialog. (#13882)
 	* Fix rare crash. (#14392)
+	* Add support for the GNOME3 Default Application dialog for configuring
+	  the Browser.
 
 	libpurple:
 	* Support new connection states and signals for NetworkManager 0.9+.
 	  (Dan Williams) (#13859)
 
 	AIM and ICQ:
+	* Fix a possible crash when receiving an unexpected message
+	  from the server. (Thijs Alkemade) (#14983)
 	* Allow signing on with usernames containing periods and
 	  underscores. (#13500)
 	* Allow adding buddies containing periods and underscores. (#13500)
@@ -68,9 +134,16 @@ version 2.10.2 (02/22/2012):
 	MSN:
 	* Fix possible crashes caused by not validating incoming messages as
 	  UTF-8. (Thijs Alkemade) (#14884)
+	* Support new protocol version MSNP18. (#14753)
+	* Fix messages to offline contacts. (#14302)
 
 	Windows-Specific Changes:
+	* Fix the installer downloading of spell-checking dictionaries (#14612)
 	* Fix compilation of the Bonjour protocol plugin. (#14802)
+
+	Plugins:
+	* The autoaccept plugin will no longer reset the preference for unknown
+	  buddies to "Auto Reject" in certain cases. (#14964)
 
 version 2.10.1 (12/06/2011):
 	Finch:
@@ -241,10 +314,6 @@ version 2.8.0 (06/07/2011):
 	  (e.g. DNS queries).  (#11110, #13928)
 	* media: Add support for using TCP relaying with TURN (will only work with
 	  libnice 0.1.0 and later).
-
-	AIM:
-	* Fix setting icons with dimensions greater than 64x64 pixels by scaling
-	  them down to at most 64x64. (#12874, #13165)
 
 	AIM:
 	* Fix setting icons with dimensions greater than 64x64 pixels by scaling
