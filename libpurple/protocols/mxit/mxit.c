@@ -650,7 +650,6 @@ static GList* mxit_blist_menu( PurpleBlistNode *node )
 	return m;
 }
 
-
 /*------------------------------------------------------------------------
  * Return Chat-room default settings.
  *
