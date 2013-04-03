@@ -23,8 +23,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02111-1301  USA
  */
 
-#include    "internal.h"
-#include	"purple.h"
+#include	"internal.h"
+#include	"debug.h"
+
 #include	"protocol.h"
 #include	"mxit.h"
 #include	"chunk.h"
@@ -97,7 +98,7 @@ const char* file_mime_type( const char* filename, const char* buf, int buflen )
  */
 static void mxit_xfer_free( PurpleXfer* xfer )
 {
-	struct mxitxfer*	mx	= (struct mxitxfer*) xfer->data;;
+	struct mxitxfer*	mx		= (struct mxitxfer*) xfer->data;;
 
 	if ( mx ) {
 		g_free( mx );
@@ -153,7 +154,6 @@ static void mxit_xfer_start( PurpleXfer* xfer )
 {
 	goffset			filesize;
 	unsigned char*	buffer;
-	int				size;
 	int				wrote;
 
 	purple_debug_info( MXIT_PLUGIN_ID, "mxit_xfer_start\n" );
@@ -166,12 +166,18 @@ static void mxit_xfer_start( PurpleXfer* xfer )
 		 */
 		filesize = purple_xfer_get_bytes_remaining( xfer );
 		buffer = g_malloc( filesize );
-		size = fread( buffer, filesize, 1, xfer->dest_fp );
-		// TODO: If (size != 1) -> file read error
 
-		wrote = purple_xfer_write( xfer, buffer, filesize );
-		if ( wrote > 0 )
-			purple_xfer_set_bytes_sent( xfer, wrote );
+		if ( fread( buffer, filesize, 1, xfer->dest_fp ) > 0 ) {
+			/* send data */
+			wrote = purple_xfer_write( xfer, buffer, filesize );
+			if ( wrote > 0 )
+				purple_xfer_set_bytes_sent( xfer, wrote );
+		}
+		else {
+			/* file read error */
+			purple_xfer_error( purple_xfer_get_type( xfer ), purple_xfer_get_account( xfer ), purple_xfer_get_remote_user( xfer ), _( "Unable to access the local file" ) );
+			purple_xfer_cancel_local( xfer );
+		}
 
 		/* free the buffer */
 		g_free( buffer );
@@ -436,14 +442,20 @@ void mxit_xfer_rx_file( struct MXitSession* session, const char* fileid, const c
 		/* this is the transfer we have been looking for */
 		purple_xfer_ref( xfer );
 		purple_xfer_start( xfer, -1, NULL, 0 );
-		fwrite( data, datalen, 1, xfer->dest_fp );
-		// TODO: Handle error from fwrite()
-		purple_xfer_unref( xfer );
-		purple_xfer_set_completed( xfer, TRUE );
-		purple_xfer_end( xfer );
 
-		/* inform MXit that file was successfully received */
-		mxit_send_file_received( session, fileid, RECV_STATUS_SUCCESS );
+		if ( fwrite( data, datalen, 1, xfer->dest_fp ) > 0 ) {
+			purple_xfer_unref( xfer );
+			purple_xfer_set_completed( xfer, TRUE );
+			purple_xfer_end( xfer );
+
+			/* inform MXit that file was successfully received */
+			mxit_send_file_received( session, fileid, RECV_STATUS_SUCCESS );
+		}
+		else {
+			/* file write error */
+			purple_xfer_error( purple_xfer_get_type( xfer ), purple_xfer_get_account( xfer ), purple_xfer_get_remote_user( xfer ), _( "Unable to save the file" ) );
+			purple_xfer_cancel_local( xfer );
+		}
 	}
 	else {
 		/* file transfer not found */
