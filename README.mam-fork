@@ -1,0 +1,6 @@
+This is a fork of Pidgin with some enhancements made to XMPP.
+
+The enhancements are from https://github.com/CkNoSFeRaTU/pidgin,
+the purpose of this repo is mostly to generate patches that can
+be applied against the upstream source tarballs.
+
